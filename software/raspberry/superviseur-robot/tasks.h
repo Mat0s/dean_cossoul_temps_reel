@@ -79,7 +79,8 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
-    RT_TASK th_wd;
+    RT_TASK th_reload;
+
     
     /**********************************************************************/
     /* Mutex                                                              */
@@ -98,7 +99,7 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
-    RT_SEM sem_sync_wd;
+    RT_SEM sem_reload;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -147,7 +148,8 @@ private:
     /**
      * @brief Thread handling control of the wd.
      */
-    void WatchDogTask(void *arg);
+    void ReloadTask(void *arg);
+
     
     /**********************************************************************/
     /* Queue services                                                     */
