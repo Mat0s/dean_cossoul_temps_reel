@@ -66,6 +66,8 @@ private:
     ComRobot robot;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
+    int getBattery = 0;
+    int wd = 0;
     
     /**********************************************************************/
     /* Tasks                                                              */
@@ -77,6 +79,7 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
+    RT_TASK th_wd;
     
     /**********************************************************************/
     /* Mutex                                                              */
@@ -85,6 +88,8 @@ private:
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
+    RT_MUTEX mutex_battery;
+    RT_MUTEX mutex_wd;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -93,6 +98,7 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    RT_SEM sem_sync_wd;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -137,6 +143,11 @@ private:
      * @brief Thread handling control of the battery.
      */
     void GetBatteryTask(void *arg);
+
+    /**
+     * @brief Thread handling control of the wd.
+     */
+    void WatchDogTask(void *arg);
     
     /**********************************************************************/
     /* Queue services                                                     */
