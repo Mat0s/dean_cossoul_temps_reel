@@ -182,11 +182,12 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-	if (err = rt_task_create(&th_server, "th_server", 0, PRIORITY_TBATT, 0)) {
+
+	if (err = rt_task_create(&th_checkRobot, "th_checkRobot", 0, PRIORITY_TBATT, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-	if (err = rt_task_create(&th_checkRobot, "th_checkRobot", 0, PRIORITY_TBATT, 0)) {
+	if (err = rt_task_create(&th_serverRestart, "th_serverRestart", 0, PRIORITY_TBATT, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -259,17 +260,20 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-	//Server (restart)
-	if (err = rt_task_start(&th_server, (void(*)(void*)) & Tasks::ServerTask, this)) {
-        cerr << "Error task start: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
-    }
+	
 	//Check robot
 	if (err = rt_task_start(&th_checkRobot, (void(*)(void*)) & Tasks::CheckRobotTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+	//Server restart
+	if (err = rt_task_start(&th_serverRestart, (void(*)(void*)) & Tasks::ServerRestartTask, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
 
+
+	
 
     cout << "Tasks launched" << endl << flush;
 }
@@ -336,7 +340,7 @@ void Tasks::GetBatteryTask(void *arg) {
 /**
  * @brief Thread handling server restart
  */
-void Tasks::ServerTask(void *arg) {
+void Tasks::ServerRestartTask(void *arg) {
     int status;
 
     
@@ -635,6 +639,9 @@ void Tasks::ReloadTask(void *arg) {
 
 
 
+/**
+ * @brief Close camera
+ */
 void Tasks::CameraTask(void *arg) {
     int status;
     int com_err;
