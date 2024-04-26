@@ -49,6 +49,9 @@ string Img::ToString() {
     return "Image size: " + to_string(this->img.cols) + "x" + to_string(this->img.rows) + " (dim=" + to_string(this->img.dims) + ")";
 }
 
+string Img::Taille(){
+    return to_string(this->img.cols+this->img.rows);
+}
 /**
  * Create a copy of current object
  * 
