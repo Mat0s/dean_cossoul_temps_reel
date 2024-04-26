@@ -64,12 +64,15 @@ private:
     /**********************************************************************/
     ComMonitor monitor;
     ComRobot robot;
-Camera camera;
+Camera *camera;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
     int getBattery = 0;
     int wd = 0;
 int err_Robot =0;
+bool CamOpen=true;
+bool AskArena=false;
+bool draw=false;
     
     /**********************************************************************/
     /* Tasks                                                              */
@@ -83,7 +86,7 @@ int err_Robot =0;
     RT_TASK th_battery;
     RT_TASK th_reload;
 RT_TASK th_camera;
-RT_TASK closeRobot;
+RT_TASK th_closeRobot;
 RT_TASK th_checkRobot;
 RT_TASK th_serverRestart;
 
@@ -99,6 +102,9 @@ RT_TASK th_serverRestart;
     RT_MUTEX mutex_wd;
 RT_MUTEX mutex_cam;
 RT_MUTEX mutex_comRobot;
+RT_MUTEX mutex_camOpen;
+RT_MUTEX mutex_askArena;
+RT_MUTEX mutex_drawArena;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -108,10 +114,12 @@ RT_MUTEX mutex_comRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
     RT_SEM sem_reload;
+    RT_SEM sem_openCam;
 RT_SEM sem_closeCam;
 RT_SEM sem_startServ;
 RT_SEM sem_restartServ;
 RT_SEM sem_closeRobot;
+RT_SEM sem_arena;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -167,10 +175,6 @@ RT_SEM sem_closeRobot;
  */
 void ServerRestartTask(void *arg);
 
-/**
- * @brief Thread opening communication with the robot.
- */
-void OpenComRobot(void *arg);
 
 /**
  * @brief Thread closing communication with the robot.
@@ -207,4 +211,3 @@ void CheckRobotTask(void *arg);
 };
 
 #endif // __TASKS_H__ 
-
