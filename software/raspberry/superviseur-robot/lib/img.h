@@ -75,6 +75,8 @@ public:
     string ToString() {
         return "Id=" + to_string(this->robotId) + ", Angle=" + to_string(this->angle) + ", center=(" + to_string(this->center.x) + ";" + to_string(this->center.y) + ")";
     }
+
+   
 };
 
 /**
@@ -136,6 +138,8 @@ public:
      * @return String containing information on contained image (size and number of channel) 
      */
     string ToString();
+
+    string Taille();
     
     /**
      * Create a copy of current object
