@@ -697,34 +697,32 @@ void Tasks::CameraTask(void *arg) {
 
                     rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
                     Img img = camera->Grab();
-                    if (!img.IsEmpty()) {
+                    cout << "img taille : " << img.ToString() << endl << flush;
+                    if (img.ToString()!="Image size: 0x0 (dim=2)") {
                         msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img);
-                        
+                        if (!msgSend->GetImage()==NULL) {
                         WriteInQueue(&q_messageToMon, msgSend);
                         rt_mutex_release(&mutex_cam);
                     
                         if (draw) {
                             img.DrawArena(arena);
                         }
+                        }
                     }
+                
                 }
                 if (AskArena) {
                     
                     Img last_image = camera->Grab();
-                        if (!last_image.IsEmpty()) {
-                        arena=last_image.SearchArena();
+                       if (last_image.ToString()!="Image size: 0x0 (dim=2)") {
+                             arena=last_image.SearchArena();
 
-                        
-
-
-
-
-                        rt_sem_p(&sem_arena, TM_INFINITE);
-                        if (draw) {
-                            last_image.DrawArena(arena);
-                    }
-                    }
-
+                            rt_sem_p(&sem_arena, TM_INFINITE);
+                            if (draw) {
+                                last_image.DrawArena(arena);
+                                SavedArena=last_image;
+                            }
+                       }
                     rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
                     AskArena=false;
                     rt_mutex_release(&mutex_askArena);
