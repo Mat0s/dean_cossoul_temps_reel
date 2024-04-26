@@ -73,6 +73,7 @@ int err_Robot =0;
 bool CamOpen=true;
 bool AskArena=false;
 bool draw=false;
+Img SavedArena;
     
     /**********************************************************************/
     /* Tasks                                                              */
