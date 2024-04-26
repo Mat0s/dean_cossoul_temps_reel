@@ -64,8 +64,15 @@ private:
     /**********************************************************************/
     ComMonitor monitor;
     ComRobot robot;
+Camera *camera;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
+    int getBattery = 0;
+    int wd = 0;
+int err_Robot =0;
+bool CamOpen=true;
+bool AskArena=false;
+bool draw=false;
     
     /**********************************************************************/
     /* Tasks                                                              */
@@ -76,6 +83,13 @@ private:
     RT_TASK th_openComRobot;
     RT_TASK th_startRobot;
     RT_TASK th_move;
+    RT_TASK th_battery;
+    RT_TASK th_reload;
+RT_TASK th_camera;
+RT_TASK th_closeRobot;
+RT_TASK th_checkRobot;
+RT_TASK th_serverRestart;
+
     
     /**********************************************************************/
     /* Mutex                                                              */
@@ -84,6 +98,13 @@ private:
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
+    RT_MUTEX mutex_battery;
+    RT_MUTEX mutex_wd;
+RT_MUTEX mutex_cam;
+RT_MUTEX mutex_comRobot;
+RT_MUTEX mutex_camOpen;
+RT_MUTEX mutex_askArena;
+RT_MUTEX mutex_drawArena;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -92,6 +113,13 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    RT_SEM sem_reload;
+    RT_SEM sem_openCam;
+RT_SEM sem_closeCam;
+RT_SEM sem_startServ;
+RT_SEM sem_restartServ;
+RT_SEM sem_closeRobot;
+RT_SEM sem_arena;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -131,7 +159,38 @@ private:
      * @brief Thread handling control of the robot.
      */
     void MoveTask(void *arg);
-    
+
+    /**
+     * @brief Thread handling control of the battery.
+     */
+    void GetBatteryTask(void *arg);
+
+    /**
+     * @brief Thread handling control of the wd.
+     */
+    void ReloadTask(void *arg);
+
+/**
+ * @brief Thread handling server restart
+ */
+void ServerRestartTask(void *arg);
+
+
+/**
+ * @brief Thread closing communication with the robot.
+ */
+void CloseRobotTask(void *arg);
+
+/**
+ * @brief Close camera
+ */
+void CameraTask(void *arg);
+
+/**
+ * @brief Thread handling the communication with the robot.
+ */
+void CheckRobotTask(void *arg);
+
     /**********************************************************************/
     /* Queue services                                                     */
     /**********************************************************************/
