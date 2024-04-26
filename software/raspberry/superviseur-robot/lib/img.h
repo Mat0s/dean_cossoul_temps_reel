@@ -123,6 +123,7 @@ public:
      */
     ImageMat img;
     
+     bool IsEmpty() const;
     /**
      * Create new Img object based on image data
      * 
@@ -235,6 +236,8 @@ private:
      * @return Reduced image, focused on arena
      */
     ImageMat CropArena(Arena arena);
+
+    bool empty();
 };
 
 #endif //__IMG_H__
