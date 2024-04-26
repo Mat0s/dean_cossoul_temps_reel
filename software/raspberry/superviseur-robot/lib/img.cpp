@@ -125,6 +125,8 @@ Jpg Img::ToJpg() {
     return imgJpg;
 }
 
+
+
 /**
  * Search available robots in an image
  * @param arena Arena position for cropping image
@@ -278,6 +280,7 @@ int Img::DrawAllRobots(std::list<Position> robots) {
     return robots.size();
 }
 
+
 /**
  * Draw arena outline
  * @param arenaToDraw Arena position
@@ -304,4 +307,9 @@ Img Img::Resize() {
     ImageMat newImage;
     cv::resize(this->img, newImage, cv::Size(320,240), cv::INTER_LINEAR);
     return Img(newImage);
+}
+
+
+bool Img::IsEmpty() const {
+    return this->img.empty();
 }
