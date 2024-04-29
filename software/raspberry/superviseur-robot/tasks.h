@@ -73,7 +73,9 @@ int err_Robot =0;
 bool CamOpen=true;
 bool AskArena=false;
 bool draw=false;
-Img SavedArena;
+int getFPS = 0;
+Img *SavedArena;
+bool posCheck=false;
     
     /**********************************************************************/
     /* Tasks                                                              */
@@ -106,8 +108,10 @@ RT_MUTEX mutex_comRobot;
 RT_MUTEX mutex_camOpen;
 RT_MUTEX mutex_askArena;
 RT_MUTEX mutex_drawArena;
+RT_MUTEX mutex_posCheck;
 
-    /**********************************************************************/
+    /**************************class Tasks {
+********************************************/
     /* Semaphores                                                         */
     /**********************************************************************/
     RT_SEM sem_barrier;
