@@ -28,7 +28,6 @@
 #define PRIORITY_TCAMERA 21
 #define PRIORITY_TBATT 20
 #define PRIORITY_TWD 29
-#define PRIORITY_TCHECKROBOT 20
 #define PRIORITY_TCLOSEROBOT 26
 #define PRIORITY_TSERVRESTART 30
 
@@ -206,10 +205,6 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
 
-	if (err = rt_task_create(&th_checkRobot, "th_checkRobot", 0, PRIORITY_TCHECKROBOT, 0)) {
-        cerr << "Error task create: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
-    }
 	if (err = rt_task_create(&th_serverRestart, "th_serverRestart", 0, PRIORITY_TSERVRESTART, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -283,12 +278,7 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-	
-	//Check robot
-	if (err = rt_task_start(&th_checkRobot, (void(*)(void*)) & Tasks::CheckRobotTask, this)) {
-        cerr << "Error task start: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
-    }
+
 	//Server restart
 	if (err = rt_task_start(&th_serverRestart, (void(*)(void*)) & Tasks::ServerRestartTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
@@ -449,8 +439,7 @@ void Tasks::SendToMonTask(void* arg) {
  */
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
-    int err; 
-    int nb_err=0;
+    int nb_err=0; //erreur entre robot et superviseur
 	
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -465,108 +454,131 @@ void Tasks::ReceiveFromMonTask(void *arg) {
     while (1) {
         msgRcv = monitor.Read();
         
-	if (nb_err ==0) {
-		cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
-        }
+	    if (nb_err <=3) {
+		    cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 	    
-        if (msgRcv->CompareID(MESSAGE_MONITOR_LOST) && nb_err == 0) {
-            nb_err++;
-            rt_sem_v(&sem_restartServ);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
-            nb_err = 0;
-            rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
-            err_Robot=0;
-            rt_mutex_release(&mutex_comRobot);
-            rt_sem_v(&sem_openComRobot);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
-	nb_err = 0;
-            rt_mutex_acquire(&mutex_move, TM_INFINITE);
-            move = msgRcv->GetID();
-            rt_mutex_release(&mutex_move);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)){
-			nb_err = 0;
-            rt_mutex_acquire(&mutex_battery, TM_INFINITE);
-            getBattery = 1;
-            rt_mutex_release(&mutex_battery);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)){
-			nb_err = 0;
-            rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-           wd = 0;
-           rt_mutex_release(&mutex_wd);
-           rt_sem_v(&sem_startRobot);
-
-        }
-        else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)){
-			nb_err = 0;
-            rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-           wd = 1;
-           rt_mutex_release(&mutex_wd);
-           rt_sem_v(&sem_startRobot);
-
-	    rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
-            err = err_Robot;
-            rt_mutex_release(&mutex_comRobot);
-            
-            if (err == 1){
+            if (msgRcv->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)) {
+                nb_err++;
+                rt_sem_v(&sem_restartServ);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
+                rt_mutex_release(&mutex_comRobot);
                 rt_sem_v(&sem_openComRobot);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
+                    msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
+                    msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
+                    msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
+                    msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_move, TM_INFINITE);
+                move = msgRcv->GetID();
+                rt_mutex_release(&mutex_move);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)){
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_battery, TM_INFINITE);
+                getBattery = 1;
+                rt_mutex_release(&mutex_battery);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)){
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_wd, TM_INFINITE);
+            wd = 0;
+            rt_mutex_release(&mutex_wd);
+            rt_sem_v(&sem_startRobot);
+
             }
-            else {
-                rt_sem_v(&sem_startRobot);
+            else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)){
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_wd, TM_INFINITE);
+            wd = 1;
+            rt_mutex_release(&mutex_wd);
+            rt_sem_v(&sem_startRobot);
+
+            
+            }
+
+            else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)){
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);
+                CamOpen=true;
+                rt_mutex_release(&mutex_camOpen);
+                rt_sem_v(&sem_openCam);
+                
+            } 
+            else if (msgRcv->CompareID(MESSAGE_CAM_CLOSE)){
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);
+                CamOpen=false;
+                rt_mutex_release(&mutex_camOpen);
+            }
+            else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)){
+                nb_err = 0;
+                rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
+                AskArena=true;
+                rt_mutex_release(&mutex_askArena);
+                rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
+                draw=true;
+                            rt_mutex_release(&mutex_drawArena);
+            }
+            else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)){
+                nb_err = 0;
+                rt_sem_v(&sem_arena);
+                
+
+            }
+            else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)){
+                nb_err = 0;
+                rt_sem_v(&sem_arena);
+                rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
+                draw=false;
+                            rt_mutex_release(&mutex_drawArena);
+
+            }
+            else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_START)){
+                nb_err = 0;
+                
+                rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
+                posCheck=true;
+                rt_mutex_release(&mutex_posCheck);
+
+            }
+            else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_STOP)){
+                nb_err = 0;
+                
+                rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
+                posCheck=false;
+                rt_mutex_release(&mutex_posCheck);
+
+            }
+            else if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)){ //superviseur/moniteur
+                nb_err = 0;
+
+                rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);  //stop robot
+                robotStarted = 0;
+                rt_mutex_release(&mutex_robotStarted);
+
+                rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);  //Close com robot
+                robot.Close();
+                rt_mutex_release(&mutex_comRobot);
+
+                rt_mutex_acquire(&mutex_cam, TM_INFINITE);         //close camera
+                camera->Close();
+                rt_mutex_release(&mutex_cam);
+
+                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);         //close monitor
+                monitor.Close();
+                rt_mutex_release(&mutex_monitor);
+
             }
         }
-
-        else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)){
-            rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);
-            CamOpen=true;
-            rt_mutex_release(&mutex_camOpen);
-			rt_sem_v(&sem_openCam);
-            
-         } 
-        else if (msgRcv->CompareID(MESSAGE_CAM_CLOSE)){
-            rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);
-            CamOpen=false;
-            rt_mutex_release(&mutex_camOpen);
-        }
-         else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)){
-            rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
-            AskArena=true;
-            rt_mutex_release(&mutex_askArena);
-            rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
-            draw=true;
-                        rt_mutex_release(&mutex_drawArena);
-        }
-        else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)){
-            rt_sem_v(&sem_arena);
-            
-
-        }
-        else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)){
-            rt_sem_v(&sem_arena);
-            rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
-            draw=false;
-                        rt_mutex_release(&mutex_drawArena);
-
-        }
-        else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_START)){
-            
-            rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
-            posCheck=true;
-            rt_mutex_release(&mutex_posCheck);
-
-        }
-        else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_STOP)){
-            
-            rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
-            posCheck=false;
-            rt_mutex_release(&mutex_posCheck);
-
+        else {
+            cout << "3 Counter stop robot (timeout)" << __PRETTY_FUNCTION__ << endl << flush;
+            rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+            robotStarted = 0;
+            rt_mutex_release(&mutex_robotStarted);
         }
         
-        delete(msgRcv); // mus be deleted manually, no consumer
+        delete(msgRcv); // must be deleted manually, no consumer
     }
 }
 
@@ -603,16 +615,8 @@ void Tasks::OpenComRobot(void *arg) {
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
 
 	    
-	    rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-        com_error = err_Robot;
-        rt_mutex_release(&mutex_robotStarted);
+	    
         
-        if (com_error == 1) {
-            rt_sem_v(&sem_startRobot);
-            rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
-            err_Robot = 0;
-            rt_mutex_release(&mutex_comRobot);
-        }
     }
 }
 
@@ -638,9 +642,7 @@ void Tasks::CloseRobotTask(void *arg) {
     while (1) {
         rt_sem_p(&sem_closeRobot, TM_INFINITE);
         
-        rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
-        com_error=err_Robot;
-        rt_mutex_release(&mutex_comRobot);
+
         
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         cout << "Close  com ("<<flush;
@@ -923,80 +925,6 @@ void Tasks::MoveTask(void *arg) {
         cout << endl << flush;
     }
 }
-
-
-/**
- * @brief Thread handling the communication with the robot.
- */
-void Tasks::CheckRobotTask(void *arg) {
-    int rs, watchdog;
-    int err_cmp;
-    
-    Message * status;
-    cout << "Start CheckRobotTask" << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
-    rt_sem_p(&sem_barrier, TM_INFINITE);
-    
-    /**************************************************************************************/
-    /* The task starts here                                                               */
-    /**************************************************************************************/
-    rt_task_set_periodic(NULL, TM_NOW, 1000000);
-    
-    err_cmp=0;
-
-    while (1) {
-        rt_task_wait_period(NULL);
-        
-        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-        rs = robotStarted;
-        rt_mutex_release(&mutex_robotStarted);
-        
-        rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-        watchdog = wd;
-        rt_mutex_release(&mutex_wd);
-        
-        if (rs == 1 && watchdog == 1) {
-            
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            status = robot.Write(new Message(MESSAGE_ROBOT_PING));
-            rt_mutex_release(&mutex_robot);
-            
-            if (err_cmp >=3) {
-                err_cmp=0;
-                cout << "------Message : The communication with the robot has ended.------" << endl;
-                rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
-                err_Robot = 1;          
-                rt_mutex_release(&mutex_comRobot);
-                
-                rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-                robotStarted = 0;
-                rt_mutex_release(&mutex_robotStarted);
-               
-                cout << "------Message : Closing the communication with the robot------" << endl;
-                rt_sem_v(&sem_closeRobot);
-                WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_COM_ERROR));                    
-            }
-            else if (status->CompareID(MESSAGE_ANSWER_COM_ERROR)) {
-               err_cmp++;
-               cout << " status :  " << status->GetID()<< endl;
-               cout << " err_cmp: " << err_cmp << endl;
-               cout << " err_Robot :" << err_Robot << endl;
-               cout << " rs : " <<robotStarted << endl << flush;
-            }      
-            else {
-               err_cmp=0;
-               cout << " err_cmp: " << err_cmp << endl;
-            }
-         
-        }
-    }
-}
-
-
-
-
-
-
 
 
 
