@@ -49,9 +49,6 @@ string Img::ToString() {
     return "Image size: " + to_string(this->img.cols) + "x" + to_string(this->img.rows) + " (dim=" + to_string(this->img.dims) + ")";
 }
 
-string Img::Taille(){
-    return to_string(this->img.cols+this->img.rows);
-}
 /**
  * Create a copy of current object
  * 
@@ -127,6 +124,8 @@ Jpg Img::ToJpg() {
     cv::imencode(".jpg", this->img, imgJpg);
     return imgJpg;
 }
+
+
 
 /**
  * Search available robots in an image
@@ -281,6 +280,7 @@ int Img::DrawAllRobots(std::list<Position> robots) {
     return robots.size();
 }
 
+
 /**
  * Draw arena outline
  * @param arenaToDraw Arena position
@@ -307,4 +307,9 @@ Img Img::Resize() {
     ImageMat newImage;
     cv::resize(this->img, newImage, cv::Size(320,240), cv::INTER_LINEAR);
     return Img(newImage);
+}
+
+
+bool Img::IsEmpty() const {
+    return this->img.empty();
 }
