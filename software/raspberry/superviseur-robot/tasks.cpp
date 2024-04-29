@@ -297,11 +297,11 @@ void Tasks::ReloadTask(void *arg) {
  * @brief Thread : Open and Close the camera, get images of the camera, draw arena and robots, get positions of robot
  */
 void Tasks::CameraTask(void *arg) {
-    int status;
-    int com_err;
-   MessageImg * msgSend;
-   camera = new Camera();
-   MessagePosition * msgPos;
+   int status; // useless ?
+   int com_err; // useless ?
+   MessageImg * msgSend; // message to send to monitor
+   camera = new Camera(); // camera object
+   MessagePosition * msgPos; // message position
 
     
     
@@ -319,74 +319,69 @@ void Tasks::CameraTask(void *arg) {
         
         cout << "Wait for open camera" << __PRETTY_FUNCTION__ << endl << flush;
         rt_sem_p(&sem_openCam, TM_INFINITE);
-        if (CamOpen) {
+        if (CamOpen) { // if the camera checkbox is checked
             rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
-            camera->Open();
+            camera->Open(); // open the camera
             rt_mutex_release(&mutex_cam);
-            while(CamOpen) {
-                while(!AskArena && CamOpen) {
-                        rt_task_wait_period(NULL);
+            while(CamOpen) { // while the camera checkbox is checked
+                cout << "Camera's shooting" << __PRETTY_FUNCTION__ << endl << flush;
+                while(!AskArena && CamOpen) { // while the user do not ask to detect arena and the camera checkbox is checked
+                    rt_task_wait_period(NULL); // wait 100ms
                     rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
-                    Img img = camera->Grab();
-                    //Draw Arena
-                    if (draw) {
-                            img.DrawArena(arena);
-                            if (posCheck) {
-                                //Draw robot
-                                list<Position> pos = img.SearchRobot(arena);
+                    Img img = camera->Grab(); // get an image from the camera
+                    //Draw Arena borders
+                    if (draw) { // if user has confirmed arena borders 
+                            img.DrawArena(arena); // draw arena borders
+                            if (posCheck) { // if user has checked the enable position checkbox
+                                //Draw robot position
+                                list<Position> pos = img.SearchRobot(arena); // list of robot positions
                                 
-                                if (!pos.empty()) {
+                                if (!pos.empty()) { // if the list of robot positions is not empty
                                     
-                                    for (Position p : pos) {
-                                        img.DrawRobot(p);
-                                        msgPos = new MessagePosition(MESSAGE_CAM_POSITION, p);
+                                    for (Position p : pos) { // for each position in the list
+                                        img.DrawRobot(p); // draw the robot
+                                        msgPos = new MessagePosition(MESSAGE_CAM_POSITION, p); // create a message with the position of the robot
                                         rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                                        monitor.Write(msgPos); // The message is deleted with the Write
+                                        monitor.Write(msgPos); // send the position message to the monitor
                                         rt_mutex_release(&mutex_monitor);
                                     }
                                 }
-                                else {
+                                else { // by default, if no robot is found, the position is set to (-1,-1)
                                     cout << "Robot not found : Position (-1,-1)" << __PRETTY_FUNCTION__ << endl << flush;
                                 }
 
                             }
                         }
-                   
-
-                    //cout << "img taille : " << img.ToString() << endl << flush;
                     
-                    msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img);
+                    msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img); // create a message with the image
                         
                     rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                    monitor.Write(msgSend); // The message is deleted with the Write
+                    monitor.Write(msgSend); // the image is sent to the monitor
                     rt_mutex_release(&mutex_monitor);
                     rt_mutex_release(&mutex_cam);
 
                   
                 
                 }
-                if (AskArena) {
+                if (AskArena) { // if the user has cliked on the border button to detect the arena
+                    cout << "Arena detection" << __PRETTY_FUNCTION__ << endl << flush;
                     
-                    Img last_image = camera->Grab();
-                       
-                             arena=last_image.SearchArena();
-
+                    Img last_image = camera->Grab(); // we store the last image
+                    arena=last_image.SearchArena(); // we detect the arena in the last image we stored
                            
-                            if (draw) {
-                                last_image.DrawArena(arena);
-                                SavedArena=last_image.Copy();
-                                 msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&last_image);
-                                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                                monitor.Write(msgSend); // The message is deleted with the Write
-                                rt_mutex_release(&mutex_monitor);
-                                rt_mutex_release(&mutex_cam);
-                            }
-                             rt_sem_p(&sem_arena, TM_INFINITE);
-
-                            
+                    if (draw) { // if the user has confirmed the arena borders
+                        last_image.DrawArena(arena); // we draw the arena borders on the last image
+                        SavedArena=last_image.Copy(); // we save the last image with the arena borders 
+                        msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&last_image); // we create a message with the image
+                        rt_mutex_acquire(&mutex_monitor, TM_INFINITE); 
+                        monitor.Write(msgSend); // the image with arena borders is sent to the monitor
+                        rt_mutex_release(&mutex_monitor);
+                        rt_mutex_release(&mutex_cam);
+                    }
+                    rt_sem_p(&sem_arena, TM_INFINITE); // we wait for the user to confirm or infirm the arena borders
                        
                     rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
-                    AskArena=false;
+                    AskArena=false; // the user has infirmed the arena borders
                     rt_mutex_release(&mutex_askArena);
 
                 }
@@ -395,7 +390,7 @@ void Tasks::CameraTask(void *arg) {
         cout << "Close Camera" << __PRETTY_FUNCTION__ << endl << flush;
 
         rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
-        camera->Close();
+        camera->Close(); // close the camera
         rt_mutex_release(&mutex_cam);
 
              
@@ -409,8 +404,8 @@ void Tasks::CameraTask(void *arg) {
  * @brief Thread handling control of the battery
  */
 void Tasks::GetBatteryTask(void *arg) {
-    int rs;
-    Message* batt_level;
+    int rs; // robot started
+    Message* batt_level; // battery level
     
     cout << "Start getBattery Task " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -425,23 +420,26 @@ void Tasks::GetBatteryTask(void *arg) {
         
         //get battery from ComRobot message
         
-        rt_task_wait_period(NULL);
+        rt_task_wait_period(NULL); // battery is updated every 500ms
 
+        // Check if the robot state (started or not)
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
 
-        if (rs == 1 && getBattery==1) {
+        if (rs == 1 && getBattery==1) { //if the robot is started and the battery checkbox is checked
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            batt_level = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
+            cout << "Get battery level " << __PRETTY_FUNCTION__ << endl << flush;
+            batt_level = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET)); //Send a message to the robot to get the battery level
             rt_mutex_release(&mutex_robot);
 
             
-            //send to monitor
+            //send to monitor the battery level
             WriteInQueue(&q_messageToMon, batt_level);
 
-            rt_mutex_acquire(&mutex_battery, TM_INFINITE);
-            getBattery = 0;
+            // if the checkbox is not checked, the battery level is not displayed
+            rt_mutex_acquire(&mutex_battery, TM_INFINITE); 
+            getBattery = 0; 
             rt_mutex_release(&mutex_battery);
         }
     }
