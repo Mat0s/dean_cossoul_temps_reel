@@ -67,15 +67,13 @@ private:
     Camera *camera;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
-    int getBattery = 0;
-    int wd = 0;
-
-    bool CamOpen=true;
-    bool AskArena=false;
-    bool draw=false;
-    int getFPS = 0;
-    Img *SavedArena;
-    bool posCheck=false;
+    int getBattery = 0; //Checkbox battery
+    int wd = 0;         //Checkbox watchdog
+    bool CamOpen=true;  //Checkbox camera
+    bool AskArena=false;//Arena button
+    bool draw=false;    //Confirm or infirm draw arena  
+    Img *SavedArena;    //Image of the arena saved
+    bool posCheck=false;//Checkbox ask position
     
     /**********************************************************************/
     /* Tasks                                                              */
@@ -86,12 +84,11 @@ private:
     RT_TASK th_openComRobot;
     RT_TASK th_startRobot;
     RT_TASK th_move;
-    RT_TASK th_battery;
-    RT_TASK th_reload;
-RT_TASK th_camera;
-RT_TASK th_closeRobot;
-RT_TASK th_checkRobot;
-RT_TASK th_serverRestart;
+    RT_TASK th_battery;      //Task battery : f13
+    RT_TASK th_reload;       //Task watchdog : f10-11
+    RT_TASK th_camera;       //Task camera : f14
+   
+    
 
     
     /**********************************************************************/
@@ -101,14 +98,14 @@ RT_TASK th_serverRestart;
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
-    RT_MUTEX mutex_battery;
-    RT_MUTEX mutex_wd;
-RT_MUTEX mutex_cam;
-RT_MUTEX mutex_comRobot;
-RT_MUTEX mutex_camOpen;
-RT_MUTEX mutex_askArena;
-RT_MUTEX mutex_drawArena;
-RT_MUTEX mutex_posCheck;
+    RT_MUTEX mutex_battery;  //access getBattery
+    RT_MUTEX mutex_wd;       //access wd
+    RT_MUTEX mutex_cam;      //access camera
+    RT_MUTEX mutex_comRobot; //access robot
+    RT_MUTEX mutex_camOpen;  //access CamOpen
+    RT_MUTEX mutex_askArena; //access AskArena
+    RT_MUTEX mutex_drawArena;//access draw
+    RT_MUTEX mutex_posCheck; //access posCheck
 
     /**************************class Tasks {
 ********************************************/
@@ -118,13 +115,9 @@ RT_MUTEX mutex_posCheck;
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
-    RT_SEM sem_reload;
-    RT_SEM sem_openCam;
-RT_SEM sem_closeCam;
-RT_SEM sem_startServ;
-RT_SEM sem_restartServ;
-RT_SEM sem_closeRobot;
-RT_SEM sem_arena;
+    RT_SEM sem_reload;     //sem for auto reload of the watchdog, unlock Reload Task
+    RT_SEM sem_openCam;    //unlock Camera Task
+    RT_SEM sem_arena;      //lock arena in Camera Task
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -171,30 +164,14 @@ RT_SEM sem_arena;
     void GetBatteryTask(void *arg);
 
     /**
-     * @brief Thread handling control of the wd.
+     * @brief Thread handling the reload of the watchdog.
      */
     void ReloadTask(void *arg);
 
-/**
- * @brief Thread handling server restart
- */
-void ServerRestartTask(void *arg);
-
-
-/**
- * @brief Thread closing communication with the robot.
- */
-void CloseRobotTask(void *arg);
-
-/**
- * @brief Close camera
- */
-void CameraTask(void *arg);
-
-/**
- * @brief Thread handling the communication with the robot.
- */
-void CheckRobotTask(void *arg);
+    /**
+     * @brief Thread : Open and Close the camera, get images of the camera, draw arena and robots, get positions of robot
+     */
+    void CameraTask(void *arg);
 
     /**********************************************************************/
     /* Queue services                                                     */
