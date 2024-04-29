@@ -275,26 +275,21 @@ void Tasks::Join() {
  * @brief Thread handling the reaload of the watchdog
  */
 void Tasks::ReloadTask(void *arg) {
-    int status;
-    int err;
     Message * msgSend;
-    cout << "Start RELOAD" << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "Start Reload Task " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
-    rt_sem_p(&sem_reload, TM_INFINITE);
+    rt_sem_p(&sem_reload, TM_INFINITE);             //The task is blocked if the Watchdog checkbox is not checked
     
     /**************************************************************************************/
     /* The task openComRobot starts here                                                  */
     /**************************************************************************************/
-    rt_task_set_periodic(NULL, TM_NOW, 1000000000); //1s
+    rt_task_set_periodic(NULL, TM_NOW, 1000000000); //Do the task every 1s
     while (1) {
         rt_task_wait_period(NULL);
-
-
+	    
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(robot.ReloadWD());
+        msgSend = robot.Write(robot.ReloadWD());     //Send a message to the Robot to make the Robot reset the timer of the watchdog
         rt_mutex_release(&mutex_robot);
-
-
     }
 }
 
@@ -452,47 +447,41 @@ void Tasks::GetBatteryTask(void *arg) {
     }
 }
 
+
 /**
  * @brief Thread starting the communication with the robot.
  */
 void Tasks::StartRobotTask(void *arg) {
-    bool watchdog;
-	Message * msgSend;
+    int watchdog;       //1 is watchdog is activated, 0 if not
+    Message * msgSend;
 
-    cout << "StartRobotTask " << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "Start Robot Task " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
     /**************************************************************************************/
     /* The task startRobot starts here                                                    */
     /**************************************************************************************/
-
-
+	
     while (1) {
-     
-
-        rt_sem_p(&sem_startRobot, TM_INFINITE);
+	rt_sem_p(&sem_startRobot, TM_INFINITE);   //The task is blocked until the robot is started
         
-        rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-       watchdog = wd;
+       rt_mutex_acquire(&mutex_wd, TM_INFINITE);
+       watchdog = wd;				  //the local var watchdog takes the value of the global var wd (updated in the ReceiveFromMonTask when the checkbox is checked or not)
        rt_mutex_release(&mutex_wd);
 
-
-       // wd
        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-       if(watchdog==1) {
-           cout << "Start robot with watchdog (";
+       if(watchdog==1) {                                 //if the Checkbox watchdog is checked
+            cout << "Start robot with watchdog (";
+            msgSend = robot.Write(robot.StartWithWD());  //Send a message to tell the robot to start with watchdog
+            rt_sem_v(&sem_reload);			 //Unlock the ReloadTask to prevent the Robot from Time Out
 
-            msgSend = robot.Write(robot.StartWithWD());
-            rt_sem_v(&sem_reload);
-
-       } else {
+       } else {                                          //if the Checkbox watchdog is not checked
            cout << "Start robot without watchdog (";
-
-           msgSend = robot.Write(robot.StartWithoutWD());
-
+           msgSend = robot.Write(robot.StartWithoutWD());//Send a message to tell the robot to start without watchdog
        }
  	rt_mutex_release(&mutex_robot);
+	    
        cout << msgSend->GetID();
        cout << ")" << endl;
 	
@@ -520,7 +509,7 @@ void Tasks::StartRobotTask(void *arg) {
  */
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
-    int nb_err=0; //erreur entre robot et superviseur
+    int nb_err=0; //errors between the robot and the supervisor
 	
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -535,15 +524,12 @@ void Tasks::ReceiveFromMonTask(void *arg) {
     while (1) {
         msgRcv = monitor.Read();
         
-	    if (nb_err <=3) {
-		    cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
-	    
-            if (msgRcv->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)) {
+	    if (nb_err <=3) {   //if the number of errors between the robot and the supervisor <=3 then we can receive messages                                              
+		cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
+            if (msgRcv->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)) { //if a timeout from the robot is received, increase nb_err by one
                 nb_err++;
-            } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) { //if a normal message is received, nb_err=0
                 nb_err = 0;
-                rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);
-                rt_mutex_release(&mutex_comRobot);
                 rt_sem_v(&sem_openComRobot);
             } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                     msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
@@ -554,110 +540,96 @@ void Tasks::ReceiveFromMonTask(void *arg) {
                 rt_mutex_acquire(&mutex_move, TM_INFINITE);
                 move = msgRcv->GetID();
                 rt_mutex_release(&mutex_move);
-            } else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)){
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)){ // Battery Task
                 nb_err = 0;
                 rt_mutex_acquire(&mutex_battery, TM_INFINITE);
-                getBattery = 1;
+                getBattery = 1;                                       //Global var put to 1 (battery checkbox checked)
                 rt_mutex_release(&mutex_battery);
-            } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)){
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)){ //Watchdog Task
                 nb_err = 0;
                 rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-            wd = 0;
-            rt_mutex_release(&mutex_wd);
-            rt_sem_v(&sem_startRobot);
-
+	        wd = 0;                                               //Global var put to 0 (watchdog checkbox not checked)
+	        rt_mutex_release(&mutex_wd);
+	        rt_sem_v(&sem_startRobot);                            //Unlock StartRobotTask
             }
-            else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)){
+            else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)){ //Watchdog Task
                 nb_err = 0;
                 rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-            wd = 1;
-            rt_mutex_release(&mutex_wd);
-            rt_sem_v(&sem_startRobot);
-
-            
+	        wd = 1;						      //Global var put to 1 (watchdog checkbox checked)
+	        rt_mutex_release(&mutex_wd);
+	        rt_sem_v(&sem_startRobot);                            //Unlock StartRobotTask
             }
-
-            else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)){      //Camera Task      
                 nb_err = 0;
-                rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);
-                CamOpen=true;
+                rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);  
+                CamOpen=true;                                   //Global var put to true (Camera checkbox checked)	
                 rt_mutex_release(&mutex_camOpen);
-                rt_sem_v(&sem_openCam);
-                
+                rt_sem_v(&sem_openCam);				//Unlock Camera Task
             } 
-            else if (msgRcv->CompareID(MESSAGE_CAM_CLOSE)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_CLOSE)){     //Camera Task
                 nb_err = 0;
                 rt_mutex_acquire(&mutex_camOpen, TM_INFINITE);
-                CamOpen=false;
+                CamOpen=false;					//Global var put to false (Camera checkbox not checked)
                 rt_mutex_release(&mutex_camOpen);
             }
-            else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)){ //Arena Task
                 nb_err = 0;
                 rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
-                AskArena=true;
+                AskArena=true;					//Global var put to true (Arena button clicked)
                 rt_mutex_release(&mutex_askArena);
                 rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
-                draw=true;
-                            rt_mutex_release(&mutex_drawArena);
+                draw=true;					//Global var put to true (Authorize the drawing of the arena in the Camera Task)
+                rt_mutex_release(&mutex_drawArena);
             }
-            else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)){ //Arena Task
                 nb_err = 0;
-                rt_sem_v(&sem_arena);
-                
-
+                rt_sem_v(&sem_arena);  //Unlock the Arena part to continue after chosing to CONFIRM or INFIRM the arena detected by the robot
+                //draw already set to true in the MESSAGE_CAM_ASK_ARENA
             }
-            else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)){ //Arena Task
                 nb_err = 0;
-                rt_sem_v(&sem_arena);
+                rt_sem_v(&sem_arena);   //Unlock the Arena part to continue after chosing to CONFIRM or INFIRM the arena detected by the robot
                 rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
-                draw=false;
-                            rt_mutex_release(&mutex_drawArena);
-
+                draw=false;		//Global var put to false (Do not authorize the drawing of the arena in the Camera Task)
+                rt_mutex_release(&mutex_drawArena);
             }
-            else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_START)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_START)){ //Robot position Task
                 nb_err = 0;
-                
                 rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
-                posCheck=true;
+                posCheck=true;		//Global var put to true (Robot position checkbox checked)
                 rt_mutex_release(&mutex_posCheck);
-
             }
-            else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_STOP)){
+            else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_STOP)){ //Robot position Task
                 nb_err = 0;
-                
                 rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
-                posCheck=false;
+                posCheck=false;		//Global var put to false (Robot position checkbox not checked)
                 rt_mutex_release(&mutex_posCheck);
-
             }
-            else if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)){ //superviseur/moniteur
+            else if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)){ //Connection lost (Connection lost between the supervisor and the monitor)
                 nb_err = 0;
-
-                rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);  //stop robot
-                robotStarted = 0;
+                rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);  
+                robotStarted = 0; //stop robot
                 rt_mutex_release(&mutex_robotStarted);
 
-                rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);  //Close com robot
-                robot.Close();
+                rt_mutex_acquire(&mutex_comRobot, TM_INFINITE);  
+                robot.Close(); //Close com robot
                 rt_mutex_release(&mutex_comRobot);
 
-                rt_mutex_acquire(&mutex_cam, TM_INFINITE);         //close camera
-                camera->Close();
+                rt_mutex_acquire(&mutex_cam, TM_INFINITE);         
+                camera->Close(); //close camera
                 rt_mutex_release(&mutex_cam);
 
-                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);         //close monitor
-                monitor.Close();
+                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);         
+                monitor.Close(); //close monitor
                 rt_mutex_release(&mutex_monitor);
-
             }
         }
         else {
             cout << "3 Counter stop robot (timeout)" << __PRETTY_FUNCTION__ << endl << flush;
             rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-            robotStarted = 0;
+            robotStarted = 0;                       // the number of errors between the robot and the supervisor >3, robot stopped
             rt_mutex_release(&mutex_robotStarted);
         }
-        
         delete(msgRcv); // must be deleted manually, no consumer
     }
 }
