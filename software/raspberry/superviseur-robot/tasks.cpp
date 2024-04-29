@@ -32,6 +32,7 @@
 #define PRIORITY_TCLOSEROBOT 26
 #define PRIORITY_TSERVRESTART 30
 
+
 /*
  * Some remarks:
  * 1- This program is mostly a template. It shows you how to create tasks, semaphore
@@ -102,6 +103,11 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_mutex_create(&mutex_posCheck, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    
     cout << "Mutexes created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -208,7 +214,7 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-
+  
     cout << "Tasks created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -290,8 +296,6 @@ void Tasks::Run() {
     }
 
 
-	
-
     cout << "Tasks launched" << endl << flush;
 }
 
@@ -352,6 +356,7 @@ void Tasks::GetBatteryTask(void *arg) {
         }
     }
 }
+
 
 
 /**
@@ -530,12 +535,13 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
             AskArena=true;
             rt_mutex_release(&mutex_askArena);
-        }
-        else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)){
-            rt_sem_v(&sem_arena);
             rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
             draw=true;
                         rt_mutex_release(&mutex_drawArena);
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)){
+            rt_sem_v(&sem_arena);
+            
 
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)){
@@ -543,6 +549,20 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_mutex_acquire(&mutex_drawArena, TM_INFINITE);
             draw=false;
                         rt_mutex_release(&mutex_drawArena);
+
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_START)){
+            
+            rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
+            posCheck=true;
+            rt_mutex_release(&mutex_posCheck);
+
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_STOP)){
+            
+            rt_mutex_acquire(&mutex_posCheck, TM_INFINITE);
+            posCheck=false;
+            rt_mutex_release(&mutex_posCheck);
 
         }
         
@@ -652,18 +672,6 @@ void Tasks::CloseRobotTask(void *arg) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 /**
  * @brief Close camera
  */
@@ -672,6 +680,8 @@ void Tasks::CameraTask(void *arg) {
     int com_err;
    MessageImg * msgSend;
    camera = new Camera();
+   MessagePosition * msgPos;
+
     
     
     cout << "Start CameraTask" << __PRETTY_FUNCTION__ << endl << flush;
@@ -681,11 +691,11 @@ void Tasks::CameraTask(void *arg) {
     /**************************************************************************************/
     /* The task closeComRobot starts here                                                  */
     /**************************************************************************************/
-     rt_task_set_periodic(NULL, TM_NOW, 100000000); //100ms
+     rt_task_set_periodic(NULL, TM_NOW, 200000000); //100ms
     Arena arena;
 
     while (1) {
-        rt_task_wait_period(NULL);
+        
         cout << "Wait for open camera" << __PRETTY_FUNCTION__ << endl << flush;
         rt_sem_p(&sem_openCam, TM_INFINITE);
         if (CamOpen) {
@@ -693,39 +703,71 @@ void Tasks::CameraTask(void *arg) {
             camera->Open();
             rt_mutex_release(&mutex_cam);
             while(CamOpen) {
-                while(!AskArena) {
-
+                while(!AskArena && CamOpen) {
+                        rt_task_wait_period(NULL);
                     rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
                     Img img = camera->Grab();
-                    cout << "img taille : " << img.ToString() << endl << flush;
-                    if (img.ToString()!="Image size: 0x0 (dim=2)") {
-                        msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img);
-                        if (!msgSend->GetImage()==NULL) {
-                        WriteInQueue(&q_messageToMon, msgSend);
-                        rt_mutex_release(&mutex_cam);
-                    
-                        if (draw) {
+                    //Draw Arena
+                    if (draw) {
                             img.DrawArena(arena);
+                            if (posCheck) {
+                                //Draw robot
+                                list<Position> pos = img.SearchRobot(arena);
+                                
+                                if (!pos.empty()) {
+                                    
+                                    for (Position p : pos) {
+                                        img.DrawRobot(p);
+                                        msgPos = new MessagePosition(MESSAGE_CAM_POSITION, p);
+                                        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+                                        monitor.Write(msgPos); // The message is deleted with the Write
+                                        rt_mutex_release(&mutex_monitor);
+                                    }
+                                }
+                                else {
+                                    cout << "Robot not found : Position (-1,-1)" << __PRETTY_FUNCTION__ << endl << flush;
+                                }
+
+                            }
                         }
-                        }
-                    }
+                   
+
+                    //cout << "img taille : " << img.ToString() << endl << flush;
+                    
+                    msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img);
+                        
+                    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+                    monitor.Write(msgSend); // The message is deleted with the Write
+                    rt_mutex_release(&mutex_monitor);
+                    rt_mutex_release(&mutex_cam);
+
+                  
                 
                 }
                 if (AskArena) {
                     
                     Img last_image = camera->Grab();
-                       if (last_image.ToString()!="Image size: 0x0 (dim=2)") {
+                       
                              arena=last_image.SearchArena();
 
-                            rt_sem_p(&sem_arena, TM_INFINITE);
+                           
                             if (draw) {
                                 last_image.DrawArena(arena);
-                                SavedArena=last_image;
+                                SavedArena=last_image.Copy();
+                                 msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&last_image);
+                                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+                                monitor.Write(msgSend); // The message is deleted with the Write
+                                rt_mutex_release(&mutex_monitor);
+                                rt_mutex_release(&mutex_cam);
                             }
-                       }
+                             rt_sem_p(&sem_arena, TM_INFINITE);
+
+                            
+                       
                     rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
                     AskArena=false;
                     rt_mutex_release(&mutex_askArena);
+
                 }
             }
         }
