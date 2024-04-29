@@ -230,21 +230,21 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    // getBattery
+    // get the state of the battery and display it
     if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::GetBatteryTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    //Reload
+    // Reload of the watchdog
     if (err = rt_task_start(&th_reload, (void(*)(void*)) & Tasks::ReloadTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
 
-	//Camera 
-	if (err = rt_task_start(&th_camera, (void(*)(void*)) & Tasks::CameraTask, this)) {
-        cerr << "Error task start: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
+    //Camera, Arena, Position of robots 
+    if (err = rt_task_start(&th_camera, (void(*)(void*)) & Tasks::CameraTask, this)) {
+    cerr << "Error task start: " << strerror(-err) << endl << flush;
+    exit(EXIT_FAILURE);
     }
 
 
@@ -269,7 +269,7 @@ void Tasks::Join() {
 }
 
 /**
- * @brief Thread handling server communication with the robot (get battery).
+ * @brief Thread handling control of the battery
  */
 void Tasks::GetBatteryTask(void *arg) {
     int rs;
@@ -563,7 +563,7 @@ void Tasks::OpenComRobot(void *arg) {
 
 
 /**
- * @brief Close camera
+ * @brief Thread : Open and Close the camera, get images of the camera, draw arena and robots, get positions of robot
  */
 void Tasks::CameraTask(void *arg) {
     int status;
@@ -685,7 +685,7 @@ void Tasks::CameraTask(void *arg) {
 
 
 /**
- * @brief reload WD
+ * @brief Thread handling the reaload of the watchdog
  */
 void Tasks::ReloadTask(void *arg) {
     int status;
