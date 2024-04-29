@@ -64,18 +64,18 @@ private:
     /**********************************************************************/
     ComMonitor monitor;
     ComRobot robot;
-Camera *camera;
+    Camera *camera;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
     int getBattery = 0;
     int wd = 0;
-int err_Robot =0;
-bool CamOpen=true;
-bool AskArena=false;
-bool draw=false;
-int getFPS = 0;
-Img *SavedArena;
-bool posCheck=false;
+
+    bool CamOpen=true;
+    bool AskArena=false;
+    bool draw=false;
+    int getFPS = 0;
+    Img *SavedArena;
+    bool posCheck=false;
     
     /**********************************************************************/
     /* Tasks                                                              */
