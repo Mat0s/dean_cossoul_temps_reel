@@ -305,7 +305,7 @@ void Tasks::CameraTask(void *arg) {
 
     
     
-    cout << "Start CameraTask" << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "Start Camera Task " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
@@ -412,7 +412,7 @@ void Tasks::GetBatteryTask(void *arg) {
     int rs;
     Message* batt_level;
     
-    cout << "Start getBattery" << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "Start getBattery Task " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
@@ -511,7 +511,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
     int nb_err=0; //errors between the robot and the supervisor
 	
-    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "Start ReceiveFromMon Task " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
