@@ -268,6 +268,148 @@ void Tasks::Join() {
     pause();
 }
 
+// Our tasks ----------------------------------------------------------------------------
+
+
+/**
+ * @brief Thread handling the reaload of the watchdog
+ */
+void Tasks::ReloadTask(void *arg) {
+    int status;
+    int err;
+    Message * msgSend;
+    cout << "Start RELOAD" << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_reload, TM_INFINITE);
+    
+    /**************************************************************************************/
+    /* The task openComRobot starts here                                                  */
+    /**************************************************************************************/
+    rt_task_set_periodic(NULL, TM_NOW, 1000000000); //1s
+    while (1) {
+        rt_task_wait_period(NULL);
+
+
+        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+        msgSend = robot.Write(robot.ReloadWD());
+        rt_mutex_release(&mutex_robot);
+
+
+    }
+}
+
+/**
+ * @brief Thread : Open and Close the camera, get images of the camera, draw arena and robots, get positions of robot
+ */
+void Tasks::CameraTask(void *arg) {
+    int status;
+    int com_err;
+   MessageImg * msgSend;
+   camera = new Camera();
+   MessagePosition * msgPos;
+
+    
+    
+    cout << "Start CameraTask" << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    /**************************************************************************************/
+    /* The task closeComRobot starts here                                                  */
+    /**************************************************************************************/
+     rt_task_set_periodic(NULL, TM_NOW, 200000000); //100ms
+    Arena arena;
+
+    while (1) {
+        
+        cout << "Wait for open camera" << __PRETTY_FUNCTION__ << endl << flush;
+        rt_sem_p(&sem_openCam, TM_INFINITE);
+        if (CamOpen) {
+            rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
+            camera->Open();
+            rt_mutex_release(&mutex_cam);
+            while(CamOpen) {
+                while(!AskArena && CamOpen) {
+                        rt_task_wait_period(NULL);
+                    rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
+                    Img img = camera->Grab();
+                    //Draw Arena
+                    if (draw) {
+                            img.DrawArena(arena);
+                            if (posCheck) {
+                                //Draw robot
+                                list<Position> pos = img.SearchRobot(arena);
+                                
+                                if (!pos.empty()) {
+                                    
+                                    for (Position p : pos) {
+                                        img.DrawRobot(p);
+                                        msgPos = new MessagePosition(MESSAGE_CAM_POSITION, p);
+                                        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+                                        monitor.Write(msgPos); // The message is deleted with the Write
+                                        rt_mutex_release(&mutex_monitor);
+                                    }
+                                }
+                                else {
+                                    cout << "Robot not found : Position (-1,-1)" << __PRETTY_FUNCTION__ << endl << flush;
+                                }
+
+                            }
+                        }
+                   
+
+                    //cout << "img taille : " << img.ToString() << endl << flush;
+                    
+                    msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img);
+                        
+                    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+                    monitor.Write(msgSend); // The message is deleted with the Write
+                    rt_mutex_release(&mutex_monitor);
+                    rt_mutex_release(&mutex_cam);
+
+                  
+                
+                }
+                if (AskArena) {
+                    
+                    Img last_image = camera->Grab();
+                       
+                             arena=last_image.SearchArena();
+
+                           
+                            if (draw) {
+                                last_image.DrawArena(arena);
+                                SavedArena=last_image.Copy();
+                                 msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&last_image);
+                                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+                                monitor.Write(msgSend); // The message is deleted with the Write
+                                rt_mutex_release(&mutex_monitor);
+                                rt_mutex_release(&mutex_cam);
+                            }
+                             rt_sem_p(&sem_arena, TM_INFINITE);
+
+                            
+                       
+                    rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
+                    AskArena=false;
+                    rt_mutex_release(&mutex_askArena);
+
+                }
+            }
+        }
+        cout << "Close Camera" << __PRETTY_FUNCTION__ << endl << flush;
+
+        rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
+        camera->Close();
+        rt_mutex_release(&mutex_cam);
+
+             
+    }
+     
+}
+
+
+
 /**
  * @brief Thread handling control of the battery
  */
@@ -310,60 +452,68 @@ void Tasks::GetBatteryTask(void *arg) {
     }
 }
 
-
-
-
 /**
- * @brief Thread handling server communication with the monitor.
+ * @brief Thread starting the communication with the robot.
  */
-void Tasks::ServerTask(void *arg) {
-    int status;
-    
-    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are started)
-    rt_sem_p(&sem_barrier, TM_INFINITE);
+void Tasks::StartRobotTask(void *arg) {
+    bool watchdog;
+	Message * msgSend;
 
-    /**************************************************************************************/
-    /* The task server starts here                                                        */
-    /**************************************************************************************/
-    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-    status = monitor.Open(SERVER_PORT);
-    rt_mutex_release(&mutex_monitor);
-
-    cout << "Open server on port " << (SERVER_PORT) << " (" << status << ")" << endl;
-
-    if (status < 0) throw std::runtime_error {
-        "Unable to start server on port " + std::to_string(SERVER_PORT)
-    };
-    monitor.AcceptClient(); // Wait the monitor client
-    cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
-    rt_sem_broadcast(&sem_serverOk);
-}
-
-/**
- * @brief Thread sending data to monitor.
- */
-void Tasks::SendToMonTask(void* arg) {
-    Message *msg;
-    
-    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "StartRobotTask " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    /**************************************************************************************/
+    /* The task startRobot starts here                                                    */
+    /**************************************************************************************/
 
-    /**************************************************************************************/
-    /* The task sendToMon starts here                                                     */
-    /**************************************************************************************/
-    rt_sem_p(&sem_serverOk, TM_INFINITE);
 
     while (1) {
-        cout << "wait msg to send" << endl << flush;
-        msg = ReadInQueue(&q_messageToMon);
-        cout << "Send msg to mon: " << msg->ToString() << endl << flush;
-        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-        monitor.Write(msg); // The message is deleted with the Write
-        rt_mutex_release(&mutex_monitor);
+     
+
+        rt_sem_p(&sem_startRobot, TM_INFINITE);
+        
+        rt_mutex_acquire(&mutex_wd, TM_INFINITE);
+       watchdog = wd;
+       rt_mutex_release(&mutex_wd);
+
+
+       // wd
+       rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+       if(watchdog==1) {
+           cout << "Start robot with watchdog (";
+
+            msgSend = robot.Write(robot.StartWithWD());
+            rt_sem_v(&sem_reload);
+
+       } else {
+           cout << "Start robot without watchdog (";
+
+           msgSend = robot.Write(robot.StartWithoutWD());
+
+       }
+ 	rt_mutex_release(&mutex_robot);
+       cout << msgSend->GetID();
+       cout << ")" << endl;
+	
+       cout << "Movement answer: " << msgSend->ToString() << endl;
+       WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
+
+
+       if (msgSend->GetID() == MESSAGE_ANSWER_ACK) {
+           rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+           robotStarted = 1;
+           rt_mutex_release(&mutex_robotStarted);
+       } else if(msgSend->GetID() == MESSAGE_ANSWER_NACK) {       
+           cout << "Robot not started :((((";
+       }
+       cout << endl << flush;
+
     }
 }
+
+
+// Monitor task ---------------------------------------------------------------------------------
 
 /**
  * @brief Thread receiving data from monitor.
@@ -512,6 +662,65 @@ void Tasks::ReceiveFromMonTask(void *arg) {
     }
 }
 
+
+	    
+
+//Already existing tasks ------------------------------------------------------------------------------------
+
+/**
+ * @brief Thread handling server communication with the monitor.
+ */
+void Tasks::ServerTask(void *arg) {
+    int status;
+    
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are started)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+
+    /**************************************************************************************/
+    /* The task server starts here                                                        */
+    /**************************************************************************************/
+    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+    status = monitor.Open(SERVER_PORT);
+    rt_mutex_release(&mutex_monitor);
+
+    cout << "Open server on port " << (SERVER_PORT) << " (" << status << ")" << endl;
+
+    if (status < 0) throw std::runtime_error {
+        "Unable to start server on port " + std::to_string(SERVER_PORT)
+    };
+    monitor.AcceptClient(); // Wait the monitor client
+    cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
+    rt_sem_broadcast(&sem_serverOk);
+}
+
+/**
+ * @brief Thread sending data to monitor.
+ */
+void Tasks::SendToMonTask(void* arg) {
+    Message *msg;
+    
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+
+    /**************************************************************************************/
+    /* The task sendToMon starts here                                                     */
+    /**************************************************************************************/
+    rt_sem_p(&sem_serverOk, TM_INFINITE);
+
+    while (1) {
+        cout << "wait msg to send" << endl << flush;
+        msg = ReadInQueue(&q_messageToMon);
+        cout << "Send msg to mon: " << msg->ToString() << endl << flush;
+        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+        monitor.Write(msg); // The message is deleted with the Write
+        rt_mutex_release(&mutex_monitor);
+    }
+}
+
+
+
 /**
  * @brief Thread opening communication with the robot.
  */
@@ -550,232 +759,6 @@ void Tasks::OpenComRobot(void *arg) {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * @brief Thread : Open and Close the camera, get images of the camera, draw arena and robots, get positions of robot
- */
-void Tasks::CameraTask(void *arg) {
-    int status;
-    int com_err;
-   MessageImg * msgSend;
-   camera = new Camera();
-   MessagePosition * msgPos;
-
-    
-    
-    cout << "Start CameraTask" << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
-    rt_sem_p(&sem_barrier, TM_INFINITE);
-    
-    /**************************************************************************************/
-    /* The task closeComRobot starts here                                                  */
-    /**************************************************************************************/
-     rt_task_set_periodic(NULL, TM_NOW, 200000000); //100ms
-    Arena arena;
-
-    while (1) {
-        
-        cout << "Wait for open camera" << __PRETTY_FUNCTION__ << endl << flush;
-        rt_sem_p(&sem_openCam, TM_INFINITE);
-        if (CamOpen) {
-            rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
-            camera->Open();
-            rt_mutex_release(&mutex_cam);
-            while(CamOpen) {
-                while(!AskArena && CamOpen) {
-                        rt_task_wait_period(NULL);
-                    rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
-                    Img img = camera->Grab();
-                    //Draw Arena
-                    if (draw) {
-                            img.DrawArena(arena);
-                            if (posCheck) {
-                                //Draw robot
-                                list<Position> pos = img.SearchRobot(arena);
-                                
-                                if (!pos.empty()) {
-                                    
-                                    for (Position p : pos) {
-                                        img.DrawRobot(p);
-                                        msgPos = new MessagePosition(MESSAGE_CAM_POSITION, p);
-                                        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                                        monitor.Write(msgPos); // The message is deleted with the Write
-                                        rt_mutex_release(&mutex_monitor);
-                                    }
-                                }
-                                else {
-                                    cout << "Robot not found : Position (-1,-1)" << __PRETTY_FUNCTION__ << endl << flush;
-                                }
-
-                            }
-                        }
-                   
-
-                    //cout << "img taille : " << img.ToString() << endl << flush;
-                    
-                    msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&img);
-                        
-                    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                    monitor.Write(msgSend); // The message is deleted with the Write
-                    rt_mutex_release(&mutex_monitor);
-                    rt_mutex_release(&mutex_cam);
-
-                  
-                
-                }
-                if (AskArena) {
-                    
-                    Img last_image = camera->Grab();
-                       
-                             arena=last_image.SearchArena();
-
-                           
-                            if (draw) {
-                                last_image.DrawArena(arena);
-                                SavedArena=last_image.Copy();
-                                 msgSend = new MessageImg(MESSAGE_CAM_IMAGE,&last_image);
-                                rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                                monitor.Write(msgSend); // The message is deleted with the Write
-                                rt_mutex_release(&mutex_monitor);
-                                rt_mutex_release(&mutex_cam);
-                            }
-                             rt_sem_p(&sem_arena, TM_INFINITE);
-
-                            
-                       
-                    rt_mutex_acquire(&mutex_askArena, TM_INFINITE);
-                    AskArena=false;
-                    rt_mutex_release(&mutex_askArena);
-
-                }
-            }
-        }
-        cout << "Close Camera" << __PRETTY_FUNCTION__ << endl << flush;
-
-        rt_mutex_acquire(&mutex_cam, TM_INFINITE);       
-        camera->Close();
-        rt_mutex_release(&mutex_cam);
-
-             
-    }
-     
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * @brief Thread handling the reaload of the watchdog
- */
-void Tasks::ReloadTask(void *arg) {
-    int status;
-    int err;
-    Message * msgSend;
-    cout << "Start RELOAD" << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
-    rt_sem_p(&sem_reload, TM_INFINITE);
-    
-    /**************************************************************************************/
-    /* The task openComRobot starts here                                                  */
-    /**************************************************************************************/
-    rt_task_set_periodic(NULL, TM_NOW, 1000000000); //1s
-    while (1) {
-        rt_task_wait_period(NULL);
-
-
-        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(robot.ReloadWD());
-        rt_mutex_release(&mutex_robot);
-
-
-    }
-}
-
-
-
-
-/**
- * @brief Thread starting the communication with the robot.
- */
-void Tasks::StartRobotTask(void *arg) {
-    bool watchdog;
-	Message * msgSend;
-
-    cout << "StartRobotTask " << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
-    rt_sem_p(&sem_barrier, TM_INFINITE);
-    
-    /**************************************************************************************/
-    /* The task startRobot starts here                                                    */
-    /**************************************************************************************/
-
-
-    while (1) {
-     
-
-        rt_sem_p(&sem_startRobot, TM_INFINITE);
-        
-        rt_mutex_acquire(&mutex_wd, TM_INFINITE);
-       watchdog = wd;
-       rt_mutex_release(&mutex_wd);
-
-
-       // wd
-       rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-       if(watchdog==1) {
-           cout << "Start robot with watchdog (";
-
-            msgSend = robot.Write(robot.StartWithWD());
-            rt_sem_v(&sem_reload);
-
-       } else {
-           cout << "Start robot without watchdog (";
-
-           msgSend = robot.Write(robot.StartWithoutWD());
-
-       }
-
-
-        
-        rt_mutex_release(&mutex_robot);
-       cout << msgSend->GetID();
-       cout << ")" << endl;
-	
-       cout << "Movement answer: " << msgSend->ToString() << endl;
-       WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
-
-
-       if (msgSend->GetID() == MESSAGE_ANSWER_ACK) {
-           rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-           robotStarted = 1;
-           rt_mutex_release(&mutex_robotStarted);
-       } else if(msgSend->GetID() == MESSAGE_ANSWER_NACK) {       
-           cout << "Robot not started :((((";
-       }
-       cout << endl << flush;
-
-    }
-}
 
 /**
  * @brief Thread handling control of the robot.
