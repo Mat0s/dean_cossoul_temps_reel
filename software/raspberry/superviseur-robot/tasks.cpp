@@ -519,7 +519,8 @@ void Tasks::ReceiveFromMonTask(void *arg) {
 
     while (1) {
         msgRcv = monitor.Read();
-        
+        cout << "Nb_err robot : " << nb_err << endl << flush;
+
 	    if (nb_err <=3) {   //if the number of errors between the robot and the supervisor <=3 then we can receive messages                                              
 		cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
             if (msgRcv->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)) { //if a timeout from the robot is received, increase nb_err by one
@@ -746,7 +747,7 @@ void Tasks::MoveTask(void *arg) {
 
     while (1) {
         rt_task_wait_period(NULL);
-        cout << "Periodic movement update";
+        //cout << "Periodic movement update";
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
@@ -755,7 +756,7 @@ void Tasks::MoveTask(void *arg) {
             cpMove = move;
             rt_mutex_release(&mutex_move);
             
-            cout << " move: \n" << cpMove;
+            //cout << " move: \n" << cpMove;
             
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             robot.Write(new Message((MessageID)cpMove));
