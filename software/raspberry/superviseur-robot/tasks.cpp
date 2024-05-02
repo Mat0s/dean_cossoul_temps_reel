@@ -297,8 +297,6 @@ void Tasks::ReloadTask(void *arg) {
  * @brief Thread : Open and Close the camera, get images of the camera, draw arena and robots, get positions of robot
  */
 void Tasks::CameraTask(void *arg) {
-   int status; // useless ?
-   int com_err; // useless ?
    MessageImg * msgSend; // message to send to monitor
    camera = new Camera(); // camera object
    MessagePosition * msgPos; // message position
